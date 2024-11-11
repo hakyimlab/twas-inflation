@@ -1,0 +1,11 @@
+name_tag: '100000'
+tensorqtl_path: '/gpfs/data/im-lab/nas40t2/yanyul/softwares/tensorqtl/tensorqtl'
+misc_tools_path: '/gpfs/data/im-lab/nas40t2/yanyul/GitHub/misc-tools/pyutil'
+wrapper_script: '/gpfs/data/im-lab/nas40t2/yanyul/GitHub/misc-tools/gw_qtl/run_trans_qtl.py'
+genotype: '/scratch/fnyasimi1/ukb/ukb_eur_100000.chr{chr_num}.bed'
+phenotype:
+  table: '/gpfs/data/im-lab/nas40t2/festus/metabolomics/metsim/ukb/paper-simulations/sim_gwas/sim-ukb_pheno_n100000_h0.85.parquet'
+  indiv_col: 'individual'
+map_trans_yaml: '/gpfs/data/im-lab/nas40t2/yanyul/GitHub/ukb_idp_genetic_arch/submission/gwas/map_trans.yaml'
+ncores: 16
+outdir: '/scratch/fnyasimi1/ukb_idp/idp_gwas_4th'
