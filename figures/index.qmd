@@ -1,0 +1,732 @@
+---
+title: "TWAS inflation paper figures"
+subtitle: |
+    Generate high quality figures for the manuscript in preparation
+date: "2024-09-23"
+author: "Festus"
+categories: [figures, inflation]
+---
+
+## Setup
+
+```{r}
+library(data.table)
+library(gridExtra)
+library(tidyverse)
+library(bacon)
+in.dir <- "/Volumes/im-lab/nas40t2/festus/metabolomics/metsim"
+devtools::source_gist('fa84e5a0cac7d630122c6034d3af6ea2')
+devtools::source_gist("115403f16bec0a0e871f3616d552ce9b")
+set.seed(7674089)
+```
+
+## Functions
+
+```{r}
+sim_plotter <- function(chi2vec, nsim = 1000,set.par = T){
+  ## Look at one gene
+  if (set.par) { par(pty="s"); par(mfrow=c(1,3)) }
+  rango=range(chi2vec)
+  # qq pvalue
+  qqunif_pathway(pchisq(chi2vec, df = 1,lower.tail = F), 
+                 main = expression("obs. vs. expected"~~italic("p-value")),
+                 BH = F, CI = T)
+  
+  ## qq chi2
+  obsmeanchi2=mean(chi2vec)
+  qqplot(qchisq((1:nsim)/(nsim+1),1),chi2vec,
+         xlab=expression(Expected~~italic(Z^2)),
+         ylab=expression(Observed~~italic(Z^2)),
+         cex.lab=0.9,mgp=c(2,1,0), cex.main =0.9,
+         xlim=rango, ylim=rango); abline(0,1)
+  title(expression("obs. vs. expected"~~italic(Z^2)))
+  
+  ## hist over sims
+  sampmeanchi2 = apply(matrix(rchisq(nsim*1000,1),nsim,1000),2,mean)
+  hist(sampmeanchi2, xlim=range(sampmeanchi2,obsmeanchi2),
+       xlab =expression("Sample mean"~~italic(Z^2)),
+       main= expression("dist. of sample mean of "~~italic(Z^2)),
+       cex.lab=0.9,mgp=c(2,1,0)); 
+  abline(v=mean(chi2vec),col="darkgray",lwd=3,lty=2)
+  if (set.par) { par(mfrow=c(1,1)) }
+
+}
+
+# correct genomic inflation function
+correct_inf_bacon <- function(df,plot = T) {
+  # convert the pvalues to zscore
+  z_vec = df$zscore
+
+  ## run bacon
+  bc <- bacon(z_vec,na.exclude = T)
+  df$bacon_pvalue = pval(bc)
+  ## Plot
+  if(plot) {print(plot(bc, type="qq"))}
+  return(df)
+}
+
+se_calc <- function(x) sd(x)/sqrt(length(x) - 1)
+
+dd_loader <- function(in.dir,pre,suf, h2 = 0.5, nsamp = 10000) {
+  
+  # load data
+  df_long <- data.frame()
+  
+  # collect across nsamp with same h2
+  if (missing(nsamp) & !missing(h2)){
+    samp_sizes <- c(2000,6000,10000,14000,18000)
+    for (samp in samp_sizes) {
+      tmp_df <- fread(glue::glue("{in.dir}/{pre}-{samp}-{h2}-{suf}")) %>% 
+        mutate(nsamp = as.numeric(samp)) %>%  
+        mutate(h2Y = as.numeric(h2)) %>% 
+        na.omit(.)
+      
+      # join them
+      df_long <- df_long %>% 
+        bind_rows(tmp_df)
+    }
+  # collect across h2 of same sample size  
+  } else if (missing(h2) & !missing(nsamp)) {
+    
+    h2y <- c(0,0.25,0.5,0.75,1)
+    for (h in h2y) {
+      tmp_df <- fread(glue::glue("{in.dir}/{pre}-{nsamp}-{h}-{suf}")) %>% 
+        mutate(nsamp = as.numeric(nsamp)) %>%  
+        mutate(h2Y = as.numeric(h)) %>% 
+        na.omit(.)
+      
+      # join them
+      df_long <- df_long %>% 
+        bind_rows(tmp_df)
+    }
+  }
+  return(df_long)
+}
+
+
+# linearilty plotter
+plotter2 <- function(nsamp_dta,h2_dta,gene) {
+  # get summary
+  nsamp_summ <- nsamp_dta %>% select(chi2 = all_of(gene), nsamp,h2Y) %>% 
+    group_by(h2Y) %>%# mutate(h2Y = as.character(h2Y)) %>% 
+    summarise(mean = mean(chi2),
+              se = sd(chi2) / sqrt(n() - 1)) %>% 
+    mutate(ci = 1.96 * se)
+  
+  h2_summ <- h2_dta %>% select(chi2 = all_of(gene), nsamp,h2Y) %>% 
+    group_by(nsamp) %>%
+    summarise(mean = mean(chi2),
+              se = sd(chi2) / sqrt(n() - 1)) %>% 
+    mutate(ci = 1.96 * se) #%>% 
+    #mutate(nsamp = factor(nsamp, levels = c(2000,6000,10000,14000,18000)))
+  
+  ## All sum
+  dta <- nsamp_summ %>% mutate(nh2 = as.numeric(h2Y) * 10000) %>% 
+    select(mean,se,ci,nh2) %>% 
+    bind_rows(h2_summ %>% mutate(nh2 = as.numeric(nsamp) * 0.5) %>% 
+                select(mean,se,ci,nh2))
+  
+  # make plots
+  y_limits <- range(nsamp_summ %>% pull(mean), h2_summ %>% pull(mean))
+  y_limits <- c(y_limits[1] - 0.3, y_limits[2] + 0.5)
+  
+  plt1 <- nsamp_summ %>% 
+    ggplot(., aes(x=h2Y, y=mean)) + 
+      #geom_line(aes(group = 1), color = "red") +
+      geom_smooth(method = "lm", se = T, color = "darkgrey", linetype = 2,
+                  fullrange = TRUE) +
+      geom_point(color = "deepskyblue4", size = 2) +
+      geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=.025,
+                    position=position_dodge(0.05),color = "deepskyblue4") +
+      ylim(y_limits) +
+      theme_minimal() +
+      theme(plot.title = element_text(face="bold",hjust = 0.5, size = 8),
+            axis.text=element_text(size=8), axis.title = element_text(size=8)) +
+      labs(title = bquote("Avg"~italic(Z^2)~"by h"[2]~"with N = 10000"),
+         x = expression(h[2]), y = expression(italic(Z^2)))
+  
+  #bquote(.(gene)~": Average"~chi^2~"by h"[2]*"y")
+  #Ns plot 
+  plt2 <- h2_summ %>% 
+    ggplot(., aes(x=nsamp, y=mean)) + 
+      #geom_line(aes(group = 1), color = "red") +
+      geom_smooth(method = "lm", se = T, color = "darkgrey", linetype = 2,
+                  fullrange = TRUE) +
+      geom_point(color = "deepskyblue4", size = 2) +
+      geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=400,
+                    position=position_dodge(0.05),color = "deepskyblue4") +
+      ylim(y_limits) + xlim(0, NA) +  
+      theme_minimal() +
+      theme(plot.title = element_text(face="bold",hjust = 0.5, size = 8),
+            axis.text=element_text(size=8), axis.title = element_text(size=8)) +
+      labs(title = bquote("Avg"~italic(Z^2)~"by N with h"[2]~"= 0.5"),
+           x = "N", y = expression(italic(Z^2)))
+  
+  plt3 <- dta %>% 
+    ggplot(., aes(x = nh2, y = mean)) +
+      geom_smooth(method = "lm", se = T, color = "darkgrey", linetype = 2) +
+      geom_point(color = "deepskyblue4", size = 2) +
+      geom_errorbar(aes(ymin=mean-ci, ymax=mean+ci), width=250,
+                      position=position_dodge(0.05),color = "deepskyblue4") +
+      ylim(y_limits) + 
+      theme_minimal() +
+      theme(plot.title = element_text(face="bold",hjust = 0.5, size = 8),
+            axis.text = element_text(size=8), axis.title = element_text(size=8)) +
+      labs(title = bquote("Avg"~italic(Z^2)~"by Nh"[2]),
+             x = expression(Nh[2]), y = expression(italic(Z^2)))
+  # combine
+  plt <- grid.arrange(plt1, plt2, plt3, ncol = 3,top = gene)
+  #print(plt)
+}
+```
+
+## Toy Dataset
+
+Here I simulate a toy dataset for genotype which I use to simulate mediating trait and independent target trait without any polygenic effects (random noise).
+
+```{r}
+beta = 0
+N = 1000
+M = 999
+maf=0.4
+nsim=1001
+etwas = rnorm(N)
+gamma = rnorm(M)
+X = matrix(rbinom(N*M,2,maf),N,M)
+
+etwas = matrix(rnorm(N*nsim), N, nsim)
+gamma = matrix(rnorm(M*nsim), M, nsim)
+Tg = X %*% gamma 
+Y = beta * Tg + etwas
+corvec = apply( scale(Y) * scale(Tg), 2, sum )  / (N-1)
+chi2vec = cor2chi2(corvec,N)
+# plot
+sim_plotter(chi2vec,nsim)
+
+```
+
+In the second simulation I simulate the target trait with some polygenicity and we observe inflation.
+
+```{r}
+delta = matrix(rnorm(M*nsim), M, nsim)
+Tg = X %*% gamma 
+Y = beta * Tg + X %*% delta + etwas
+corvec = apply( scale(Y) * scale(Tg), 2, sum )  / (N-1)
+chi2vec2 = cor2chi2(corvec,N)
+sim_plotter(chi2vec2,nsim)
+```
+
+Save the figure in a high quality format.
+
+```{r}
+#| eval: false
+
+#save plot
+png("figure_1.png", width = 15, height = 10, units = "cm", res = 600)
+par(mfrow=c(2,3))
+#par(mar = c(3, 3, 2, 1)) #non square figure margins B, L, T, R
+par(mar = c(3, 2, 1.5, 0.5)); par(pty="s") # square
+sim_plotter(chi2vec,nsim, set.par = F)
+sim_plotter(chi2vec2,nsim, set.par = F)
+mtext("a.", side = 3, line = 15.1, at = -3.1, adj = 1, cex = 1,font = 4)
+mtext("b.", side = 3, line = 15.1, at = -1.2, adj = 1, cex = 1,font = 4)
+mtext("c.", side = 3, line = 15.1, at = 0.5, adj = 1, cex = 1,font = 4)
+mtext("d.", side = 3, line = 0.2, at = -3.1, adj = 1, cex = 1,font = 4)
+mtext("e.", side = 3, line = 0.2, at = -1.2, adj = 1, cex = 1,font = 4)
+mtext("f.", side = 3, line = 0.2, at = 0.5, adj = 1, cex = 1,font = 4)
+par(mfrow=c(1,1))
+dev.off()
+```
+
+![Figure 1: Toy dataset simulations to show inflation](figure_1.png)
+
+The figure looks good
+
+## TWAS with UKB
+
+Here I use the same gene to test inflation in TWAS using either PrediXcan or Fusion weights to predict gene expression
+
+### Predixcan
+
+```{r}
+#| eval: false
+#| message: false
+nnull_chi2 <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/en_Whole_Blood-10000-null-null.txt"))
+# load polygenic null
+pnull_chi2 <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/en_Whole_Blood-10000-polygenic-null.txt"))
+
+# plot
+png("figure_2.png", width = 15, height = 10, units = "cm", res = 600)
+par(mfrow=c(2,3))
+par(mar = c(3, 2, 1.5, 0.5)); par(pty="s")
+sim_plotter(chi2vec = nnull_chi2$ENSG00000145020,nsim = 1000, set.par = F)
+sim_plotter(chi2vec = pnull_chi2$ENSG00000145020,nsim = 1000, set.par = F)
+mtext("a.", side = 3, line = 15.1, at = -3.1, adj = 0, cex = 1,font = 4)
+mtext("b.", side = 3, line = 15.1, at = -1.2, adj = 1, cex = 1,font = 4)
+mtext("c.", side = 3, line = 15.1, at = 0.5, adj = 1, cex = 1,font = 4)
+mtext("d.", side = 3, line = 0.2, at = -3.1, adj = 0, cex = 1,font = 4)
+mtext("e.", side = 3, line = 0.2, at = -1.2, adj = 1, cex = 1,font = 4)
+mtext("f.", side = 3, line = 0.2, at = 0.5, adj = 1, cex = 1,font = 4)
+par(mfrow=c(1,1))
+dev.off()
+```
+
+![Figure 2: PrediXcan TWAS with UKB genotype dataset, N = 10000, nsim=1000 for ENSG00000145020 gene](figure_2.png)
+
+### Fusion
+
+```{r}
+#| eval: false
+#| message: false
+fusion_nnull_chi2 <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/full-fusion-GTEx.Whole_Blood-10000-0.5-null-null.txt")) %>% 
+  rename_with(~ gsub("\\..*", "", .))
+# load polygenic null
+fusion_pnull_chi2 <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/full-fusion-GTEx.Whole_Blood-10000-0.5-polygenic-null.txt")) %>% 
+  rename_with(~ gsub("\\..*", "", .))
+
+# plot
+png("figure_2_supp.png", width = 15, height = 10, units = "cm", res = 600)
+par(mfrow=c(2,3))
+par(mar = c(3, 2, 1.5, 0.5)); par(pty="s")
+sim_plotter(chi2vec = fusion_nnull_chi2$ENSG00000145020,nsim = 1000, set.par = F)
+sim_plotter(chi2vec = fusion_pnull_chi2$ENSG00000145020,nsim = 1000, set.par = F)
+mtext("a.", side = 3, line = 15.1, at = -2.7, adj = 0, cex = 1,font = 4)
+mtext("b.", side = 3, line = 15.1, at = -1.2, adj = 0, cex = 1,font = 4)
+mtext("c.", side = 3, line = 15.1, at = 0.5, adj = 1, cex = 1,font = 4)
+mtext("d.", side = 3, line = 0.2, at = -2.7, adj = 0, cex = 1,font = 4)
+mtext("e.", side = 3, line = 0.2, at = -1.2, adj = 0, cex = 1,font = 4)
+mtext("f.", side = 3, line = 0.2, at = 0.5, adj = 1, cex = 1,font = 4)
+par(mfrow=c(1,1))
+dev.off()
+```
+
+![Figure 2 supp: Fusion TWAS; N = 10000, nsim=1000, h2=0.5 for ENSG00000145020 gene](figure_2_supp.png)
+
+The results look similar for both PrediXcan and Fusion
+
+## Linear dependency
+
+Here I want to check the linear dependency of inflation with the sample size and h2. I will look at a selected metabolite and a selected MRI feature
+
+### genes
+
+```{r}
+#| eval: false
+d.path <- glue::glue("{in.dir}/ukb/paper-simulations/nullchi2")
+pre = "en_Whole_Blood"; suf = "polygenic-null.txt"
+
+# provide the fixed parameter h2
+h2_dta <- dd_loader(d.path,pre,suf, h2 = 0.5)
+# provide the fixed parameter nsamp
+nsamp_dta <- dd_loader(d.path,pre,suf,nsamp = 10000)
+
+# run our 3 main genes
+#genes <- c("ENSG00000120071", "ENSG00000145020", "ENSG00000213672")
+
+gene = "ENSG00000120071"
+png("figure_3.png", width = 18, height = 8, units = "cm", res = 600)
+plotter2(nsamp_dta,h2_dta,gene)
+dev.off()
+```
+
+![Figure 3: Linear dependency of inflation on GWAS sample size and heritability](figure_3.png)
+
+### metabolites
+
+```{r}
+#| eval: false
+d.path <- glue::glue("{in.dir}/ukb/paper-simulations/nullchi2")
+pre = "full-metsim-invnorm-softimpute"; suf = "polygenic-null.txt"
+
+# provide the fixed parameter h2
+h2_dta <- dd_loader(d.path,pre,suf, h2 = 0.5)
+# provide the fixed parameter nsamp
+nsamp_dta <- dd_loader(d.path,pre,suf,nsamp = 10000)
+
+# random metabolites
+# genes <- c("C100001612", "C999924344", "C100001808")
+# 
+# for (gene in genes) {
+#   plotter2(nsamp_dta,h2_dta,gene)
+# }
+met = "C100001808"
+png("figure_3_supp1.png", width = 18, height = 8, units = "cm", res = 600)
+plotter2(nsamp_dta,h2_dta,met)
+dev.off()
+```
+
+![Figure 3 supp: Inflation linearly increases with N and h2 in metabolites](figure_3_supp1.png)
+
+We still observe the linearity
+
+### brain mri features
+
+```{r}
+#| eval: false
+pre = "full-dmri_w_pc"; suf = "polygenic-null.txt"
+
+# provide the fixed parameter h2
+h2_dta <- dd_loader(d.path,pre,suf, h2 = 0.5)
+# provide the fixed parameter nsamp
+nsamp_dta <- dd_loader(d.path,pre,suf,nsamp = 10000)
+
+# random mri
+# genes <- c("IDP-25670","IDP-25671", "IDP-25672", "IDP-25673", "IDP-25674",
+#            "IDP-25675", "IDP-25676", "PC-ICVF-ProbTrack-1")
+# 
+# for (gene in genes) {
+#   plotter2(nsamp_dta,h2_dta,gene)
+# }
+
+mri= "IDP-25676"
+png("figure_3_supp2.png", width = 18, height = 8, units = "cm", res = 600)
+plotter2(nsamp_dta,h2_dta,mri)
+dev.off()
+
+```
+
+![Figure 3 supp2: Brain features show lineality](figure_3_supp2.png)
+
+## Variance controls inflation
+
+### Estimate phi
+
+First I will estimate phi for the 3 molecular traits
+
+```{r}
+#| eval: false
+# Whole blood genes
+genes_sim_100k <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/full-en_Whole_Blood-100000-0.99-polygenic-null.txt"))
+phi_nsamp <- 100000
+phi_h2 <- 0.99  # Replace with the actual value of h
+
+# Calculate the mean and SE for each column, and then calculate phi
+gene_phi <- genes_sim_100k %>%
+  summarise(across(everything(), list(
+    avg.chi = ~mean(.),
+    se = ~se_calc(.)
+  ))) %>%
+  pivot_longer(everything(), 
+               names_to = c("gene", "stat"), names_sep = "_") %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  mutate(phi = (avg.chi - 1 + 2*se) / (phi_nsamp * phi_h2))
+
+# metabolites nsim=2000
+met_sim_100k <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/full-metsim-invnorm-softimpute-100000-0.9-polygenic-null.txt"))
+phi_h2 <- 0.9 
+
+# Calculate the mean and SE for each column, and then calculate phi
+met_phi <- met_sim_100k %>%
+  summarise(across(everything(), list(
+    avg.chi = ~mean(.),
+    se = ~se_calc(.)
+  ))) %>%
+  pivot_longer(everything(), 
+               names_to = c("gene", "stat"), names_sep = "_") %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  mutate(phi = (avg.chi - 1 + 2*se) / (phi_nsamp * phi_h2))
+
+# brain features
+dmri_sim_100k <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/full-dmri_w_pc-100000-0.9-polygenic-null.txt")) %>%
+  rename_with(~ gsub("-", "", .)) %>% 
+  rename_with(~ gsub("_", "", .))
+
+br_dmri_phi <- dmri_sim_100k %>%
+  summarise(across(everything(), list(
+    avg.chi = ~mean(.),
+    se = ~se_calc(.)
+  ))) %>%
+  pivot_longer(everything(), 
+               names_to = c("gene", "stat"), names_sep = "_") %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  mutate(phi = (avg.chi - 1 + 2*se) / (phi_nsamp * phi_h2))
+
+t1_sim_100k <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/full-t1_w_pc-100000-0.9-polygenic-null.txt")) %>%
+  rename_with(~ gsub("-", "", .)) %>% 
+  rename_with(~ gsub("_", "", .))
+
+br_t1_phi <- t1_sim_100k %>%
+  summarise(across(everything(), list(
+    avg.chi = ~mean(.),
+    se = ~se_calc(.)
+  ))) %>%
+  pivot_longer(everything(), 
+               names_to = c("gene", "stat"), names_sep = "_") %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  mutate(phi = (avg.chi - 1 + 2*se) / (phi_nsamp * phi_h2))
+
+br_phi <- br_dmri_phi %>% bind_rows(br_t1_phi)
+```
+
+### control for inflation
+
+Here I will compare how bacon controls for inflation compared to our method
+
+```{r}
+#| eval: false
+# GENES
+genes_spred <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sim_gwas/out/n100000_sim9-0.85-spred.txt"))
+sample_size = 100000 # sample size used to run GWAS
+assoc_h2 = 0.85 # Initial h2 for trait. Do I need to estimate it again using gcta?
+genes_spred <- genes_spred %>% 
+  #mutate(gene = gsub("\\.\\d+$", "", gene)) %>% 
+  inner_join(gene_phi %>% select(gene,phi), by = "gene") %>% 
+  mutate(corrected_pval = pchisq(zscore^2/(1 + (phi * sample_size * assoc_h2)), 
+                                 df= 1, ncp = 0, lower.tail = F)) %>% 
+  filter(!is.na(corrected_pval))
+genes_spred <- correct_inf_bacon(genes_spred, plot = F)
+
+# Metabolites
+metabo_spred <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sim_gwas/out/n100000_sim9-0.85-metsim-spred.txt"))
+metabo_spred <- metabo_spred %>% 
+  #mutate(gene = gsub("\\.\\d+$", "", gene)) %>% 
+  inner_join(met_phi %>% select(gene,phi), by = "gene") %>% 
+  mutate(corrected_pval = pchisq(zscore^2/(1 + (phi * sample_size * assoc_h2)), df= 1, ncp = 0, lower.tail = F)) %>% 
+  filter(!is.na(corrected_pval))
+metabo_spred <- correct_inf_bacon(metabo_spred, plot = F)
+
+brain_spred <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sbrainxcan/n100000_sim9-0.85.sbrainxcan.csv"))
+
+brain_spred <- brain_spred %>% 
+  rename(zscore = z_brainxcan, pvalue = pval) %>% 
+  mutate(gene = gsub("-", "", gsub("_", "", IDP))) %>% 
+  inner_join(br_phi %>% select(gene,phi), by = "gene") %>% 
+  mutate(corrected_pval = pchisq(zscore^2/(1 + (phi * sample_size * assoc_h2)), df= 1, ncp = 0, lower.tail = F)) %>% 
+  filter(!is.na(corrected_pval))
+brain_spred <- correct_inf_bacon(brain_spred, plot = F)
+```
+
+Make the panel plots for the molecular traits
+
+```{r}
+#| eval: false
+#| message: false
+png("figure_5.png", width = 15, height = 6.5, units = "cm", res = 600)
+par(mfrow=c(1,3))
+par(mar = c(0.1, 3, 1.5, 0.4), oma=c(1, 0.1, 0.01, 0.5)) #B, L, T, R
+par(pty="s") #B, L, T, R
+# GENES
+qqunif_pathway(genes_spred$pvalue, cex = 0.5, BH = F, CI = T,
+               main = "Genes",cex.lab=0.9) + 
+  qqpoints(genes_spred$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(genes_spred$bacon_pvalue, pch= 5, col=4, cex = 0.5) 
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue", 
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+# Metabolites
+qqunif_pathway(metabo_spred$pvalue, cex = 0.5,BH = F, CI = T, 
+               main = "Metabolites",cex.lab=0.9) + 
+  qqpoints(metabo_spred$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(metabo_spred$bacon_pvalue, pch= 5, col=4, cex = 0.5) 
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue", 
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+# MRI features
+qqunif_pathway(brain_spred$pvalue, cex = 0.5, BH = F, CI = T,
+               main = "MRI features",cex.lab=0.9) +
+  qqpoints(brain_spred$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(brain_spred$bacon_pvalue, pch= 5, col=4, cex = 0.5)
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue",
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+par(mfrow=c(1,1))
+dev.off()
+```
+
+![Figure 5: Variance control in genes, metabolites and brain MRI features using a null gwas sumstats with a sample size of 100k and h2=0.85.](figure_5.png)
+
+### fusion
+
+```{r}
+#| eval: false
+# estimate phi 
+full_sim_fusion <- fread(glue::glue("{in.dir}/ukb/paper-simulations/nullchi2/full-fusion-GTEx.Whole_Blood-100000-0.9-polygenic-null.txt")) #%>% 
+  #rename_with(~ gsub("\\.\\d+$", "", .))
+
+phi_nsamp <- 100000
+phi_h2 <- 0.9  # Replace with the actual value of h
+
+# Calculate the mean and SE for each column, and then calculate phi
+fusion_phi <- full_sim_fusion %>%
+  summarise(across(everything(), list(
+    avg.chi = ~mean(.),
+    se = ~se_calc(.)
+  ))) %>%
+  pivot_longer(everything(), 
+               names_to = c("gene", "stat"), names_sep = "_") %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  mutate(phi = (avg.chi - 1 + 2*se) / (phi_nsamp * phi_h2))
+
+# apply correction
+fusion_twas <- data.frame()
+for (chr in 1:22) {
+  tmp_res <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sim_gwas/out/n100000_sim9-0.85.{chr}.dat"))
+  fusion_twas <- fusion_twas %>%  bind_rows(tmp_res)
+  
+}
+
+sample_size = 100000 # sample size used to run GWAS
+assoc_h2 = 0.85
+fusion_twas <- fusion_twas %>% 
+  mutate(gene = str_extract(basename(FILE), "ENSG[0-9]+\\.[0-9]+")) %>% 
+  inner_join(fusion_phi %>% select(gene,phi), by = "gene") %>%  
+  mutate(corrected_pval = pchisq(TWAS.Z^2/(1 + (phi * sample_size * assoc_h2)), df= 1, ncp = 0, lower.tail = F)) %>% 
+  filter(!is.na(TWAS.P))
+
+fusion_twas <- correct_inf_bacon(fusion_twas %>% mutate(zscore = TWAS.Z), plot = F)
+
+# plot
+png("figure_5_supp.png", width = 8, height = 8, units = "cm", res = 600)
+par(pty="s"); par(mar = c(3, 2, 2, 0.1)) #B, L, T, R
+qqunif_pathway(fusion_twas$TWAS.P, cex = 0.5, BH = F, CI = T,
+               main = "Genes",cex.lab=0.9) +
+  qqpoints(fusion_twas$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(fusion_twas$bacon_pvalue, pch= 5, col=4, cex = 0.5)
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue",
+                           "Phi Calibrated pval"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+dev.off()
+```
+
+![Figure 5 supp: Correction in fusion gene models (n=1905) from whole blood](figure_5_supp.png){width="13cm"}
+
+## TWAS of real GWAS studies
+
+Here we run a TWAS using GWAS of 3 traits; T2D, SCZ and CKD
+
+### spredixcan
+
+```{r}
+#| eval: false
+# quick function
+correct_twas <- function(spred_df,phi_df,N,h2) {
+  spred_df <- spred_df %>% 
+    inner_join(phi_df %>% select(gene,phi), by = "gene") %>% 
+    mutate(corrected_pval = pchisq(zscore^2/(1 + (phi * N * h2)), 
+                                   df= 1, ncp = 0, lower.tail = F)) %>% 
+    filter(!is.na(corrected_pval))
+  spred_df <- correct_inf_bacon(spred_df, plot = F)
+  return(spred_df)
+}
+
+traits <- c("imputed_pgc.scz2","imputed_CKDGen_Chronic_Kidney_Disease",
+            "imputed_DIAGRAM_T2D_TRANS_ETHNIC")
+
+# load data
+scz_spred <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sim_gwas/out/{traits[1]}-spred.txt"))
+ckd_spred <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sim_gwas/out/{traits[2]}-spred.txt"))
+t2d_spred <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sim_gwas/out/{traits[3]}-spred.txt"))
+
+# correct results
+scz_spred <- correct_twas(scz_spred, gene_phi, N = 150064, h2 = 0.2416)
+ckd_spred <- correct_twas(ckd_spred, gene_phi, N = 118137, h2 = 0.068)
+t2d_spred <- correct_twas(t2d_spred, gene_phi, N = 149461, h2 = 0.0495)
+```
+
+Make a plot
+
+```{r}
+#| eval: false
+png("figure_6.png", width = 15, height = 6.5, units = "cm", res = 600)
+par(mfrow=c(1,3))
+par(mar = c(0.1, 3, 1.5, 0.4), oma=c(1, 0.1, 0.01, 0.5)) #B, L, T, R
+par(pty="s") #B, L, T, R
+# GENES
+qqunif_pathway(t2d_spred$pvalue, cex = 0.5, BH = F, CI = T,
+               main = "T2D",cex.lab=0.9) + 
+  qqpoints(t2d_spred$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(t2d_spred$bacon_pvalue, pch= 5, col=4, cex = 0.5) 
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue", 
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+# Metabolites
+qqunif_pathway(scz_spred$pvalue, cex = 0.5,BH = F, CI = T, 
+               main = "SCZ",cex.lab=0.9) + 
+  qqpoints(scz_spred$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(scz_spred$bacon_pvalue, pch= 5, col=4, cex = 0.5) 
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue", 
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+# MRI features
+qqunif_pathway(ckd_spred$pvalue, cex = 0.5, BH = F, CI = T,
+               main = "CKD",cex.lab=0.9) +
+  qqpoints(ckd_spred$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(ckd_spred$bacon_pvalue, pch= 5, col=4, cex = 0.5)
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue",
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+par(mfrow=c(1,1))
+dev.off()
+```
+
+![Figure 6: TWAS of real gwas data for genes](figure_6.png)
+
+### fusion
+
+```{r}
+#| eval: false
+fusion_loader <- function(trait) {
+  fusion_twas <- data.frame()
+  for (chr in 1:22) {
+    tmp_res <- fread(glue::glue("{in.dir}/ukb/paper-simulations/sim_gwas/out/{trait}.{chr}.dat"))
+  fusion_twas <- fusion_twas %>%  bind_rows(tmp_res)
+  }
+  fusion_twas <- fusion_twas %>% mutate(pvalue = TWAS.P, zscore = TWAS.Z) %>% 
+    mutate(gene = str_extract(basename(FILE), "ENSG[0-9]+\\.[0-9]+"))
+  return(fusion_twas)
+}
+
+# load and correct
+# load data
+scz_fusion <- fusion_loader(traits[1])
+ckd_fusion <- fusion_loader(traits[2])
+t2d_fusion <- fusion_loader(traits[3])
+
+# correct results
+scz_fusion <- correct_twas(scz_fusion, fusion_phi, N = 150064, h2 = 0.2416)
+ckd_fusion <- correct_twas(ckd_fusion, fusion_phi, N = 118137, h2 = 0.068)
+t2d_fusion <- correct_twas(t2d_fusion, fusion_phi, N = 149461, h2 = 0.0495)
+
+# plot
+png("figure_6_supp.png", width = 15, height = 6.5, units = "cm", res = 600)
+par(mfrow=c(1,3))
+par(mar = c(0.1, 3, 1.5, 0.4), oma=c(1, 0.1, 0.01, 0.5)) #B, L, T, R
+par(pty="s") #B, L, T, R
+# T2D
+qqunif_pathway(t2d_fusion$pvalue, cex = 0.5, BH = F, CI = T,
+               main = "T2D",cex.lab=0.9) + 
+  qqpoints(t2d_fusion$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(t2d_fusion$bacon_pvalue, pch= 5, col=4, cex = 0.5) 
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue", 
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+# SCZ
+qqunif_pathway(scz_fusion$pvalue, cex = 0.5,BH = F, CI = T, 
+               main = "SCZ",cex.lab=0.9) + 
+  qqpoints(scz_fusion$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(scz_fusion$bacon_pvalue, pch= 5, col=4, cex = 0.5) 
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue", 
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+# CKD
+qqunif_pathway(ckd_fusion$pvalue, cex = 0.5, BH = F, CI = T,
+               main = "CKD",cex.lab=0.9) +
+  qqpoints(ckd_fusion$corrected_pval, pch= 3, col=3, cex = 0.5) +
+  qqpoints(ckd_fusion$bacon_pvalue, pch= 5, col=4, cex = 0.5)
+legend("topleft", legend=c("Observed pvalue", "Bacon Calibrated pvalue",
+                           "Phi Calibrated pvalue"),
+       col=c("black", "blue", "green"), pch=c(1,5,3), cex=.5)
+
+par(mfrow=c(1,1))
+dev.off()
+```
+
+![Figure 6 supp: Fusion TWAS application on real GWAS data](figure_6_supp.png)
