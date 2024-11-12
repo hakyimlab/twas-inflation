@@ -2,7 +2,7 @@
 This repository contains the code used to show inflation in TWAS and other xWAS studies. The general workflow of preprocesing data and estimating phi for different models.
 
 ## Prerequisite
-* Ensure you have a proper working [PrediXcan tool](https://github.com/hakyimlab/MetaXcan/tree/master), [Fusion tool](http://gusevlab.org/projects/fusion/) and R.
+* Ensure you have a proper working [MetaXcan software](https://github.com/hakyimlab/MetaXcan/tree/master), [Fusion tool](http://gusevlab.org/projects/fusion/) and R.
 
 * Download the GTEx models from [here](https://predictdb.org/post/2021/07/21/gtex-v8-models-on-eqtl-and-sqtl/) and Fusion models from [here](http://gusevlab.org/projects/fusion/#gtex-v8-multi-tissue-expression)
 
@@ -45,7 +45,7 @@ In the figures folder we have the rmd markdown showing simulations using toy dat
 
 
 ## Application to Real TWAS
-We updated our PrediXcan software to perform variance control for TWAS studies when using summary statistics. 
+We updated our [MetaXcan software v0.8.0](https://github.com/hakyimlab/MetaXcan/releases/tag/v0.8.0) to perform variance control for TWAS studies when using summary statistics. 
 First you will need download the latest release of MetaXcan, then download the [latest tissue models](https://uchicago.box.com/s/w0nzszuvuwcsznvo8x4c15o4hujqrwm7) with the phi used for varinace control.
 
 Next determine the sample size (N) and the heritability (h2) of your GWAS summary statistics, these two parameters together with phi are required for variance control. 
