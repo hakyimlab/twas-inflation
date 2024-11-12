@@ -8,7 +8,7 @@ This repository contains the code used to show inflation in TWAS and other xWAS 
 
 
 ## Genotype preprocessing
-We utilize the unrelayed indidivuals from the UK Biobank to do the simulations and estimate phi. First we preprocess the genotype to select individuals with low missingness in and select the common SNPs that overlap with GTEx and Hapmap3 to have a manageable size files for analysis. We sample the genotype with a varying sample size for simulations. An example below for selecting individuals with a sample size of 100k, I use a vcf file for easy maching of id between GTEx models and UK Biobank genotype
+We utilize the unrelated individuals from the UK Biobank to do the simulations and estimate phi. First, we preprocess the genotype to select individuals with low missingness and select the common SNPs that overlap with GTEx and Hapmap3 to have a manageable size of files for analysis. We sample the genotype with a varying sample size for simulations. An example below for selecting individuals with a sample size of 100k, I use a vcf file for easy matching of id between GTEx models and UK Biobank genotype
 
 ```{bash}
 for i in $(seq 1 22); do
@@ -30,19 +30,18 @@ done
 ```
 
 ## Predict gene expression
-For GTEx models we use the PrediXcan tool to impute gene expression. For fusion models there is no direct way of imputing expression so we first convert the Fusion weights into a PrediXcan format to impute gene expression using the code in `fusion_to_predixcan.R`. Once converted then we can run PrediXcan to impute gene expression to be used for simulations
+For GTEx models we use the PrediXcan tool to impute gene expression. For Fusion models there is no direct way of imputing expression so we first convert the Fusion weights into a PrediXcan format to impute gene expression using the code in `fusion_to_predixcan.R`. Once converted then we can run PrediXcan to impute gene expression to be used for simulations
 
 
 ## Under the null simulation
-First we run simulations with a null phenotype without polygenic component using the `null_null_sims.R` to obtain the Z^2 values when the phenotype has no polygenic component. Then we run a second simulation using a polygenic phenotype to obtain the Z^2 using the `polygenic_null_sims.R`. In the second simulation we run a varition of the h2 across the different sample sizes we use for simulation. The job submission scripts are in the submission folder.
+First, we run simulations with a null phenotype without polygenic component using the `null_null_sims.R` to obtain the Z^2 values when the phenotype has no polygenic component. Then we run a second simulation using a polygenic phenotype to obtain the Z^2 using the `polygenic_null_sims.R`. In the second simulation, we run various values of the h2 across the different sample sizes we use for simulation. The job submission scripts are in the submission folder.
 
 ## summary statistics TWAS
-We run TWAS using summary statistics for both GTEx models and predixcan models using their respective tools to obtain TWAS results using null phenotypes. The workflow and code is available in the `sim_gwas` folder. The first step is we simulate a null polygenic phenotype then run a gwas using the genotype we used for simulaton to obtain the summary statistics which we use to run the TWAS.
+We run TWAS using summary statistics for both GTEx models and Fusion models using their respective tools to obtain TWAS results using null phenotypes. The workflow and code are available in the `sim_gwas` folder. The first step is to simulate a null polygenic phenotype and then run a GWAS using the genotype we used for simulation to obtain the summary statistics for running the TWAS.
 
 
 ## Show inflation and paper figures
-In the figures folder we have the rmd markdown showing simulations using toy dataset and real genotype to show how TWAS studies are inflated and how to correct the them. We show results using GTEx models and Fusion models.
-
+In the figures folder, we have the rmd markdown showing simulations using toy dataset and real genotype to show how TWAS studies are inflated and how to correct them. We show results using GTEx models and Fusion models.
 
 ## Application to Real TWAS
 We updated our [MetaXcan software v0.8.0](https://github.com/hakyimlab/MetaXcan/releases/tag/v0.8.0) to perform variance control for TWAS studies when using summary statistics. 
@@ -76,3 +75,4 @@ The uncalibrated pvalues and zscores are at the right end of the table in `uncal
 
 **Note:** If you don't provide both the `--gwas_N` and `--gwas_h2` the tool will give you uncalibrated_pvalue and uncalibrated_zscore in the pvalue and zscore column. 
 For calibration to work both the parameters should be provided and used with latest models with phi parameter.  
+
