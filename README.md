@@ -42,3 +42,37 @@ We run TWAS using summary statistics for both GTEx models and predixcan models u
 
 ## Show inflation and paper figures
 In the figures folder we have the rmd markdown showing simulations using toy dataset and real genotype to show how TWAS studies are inflated and how to correct the them. We show results using GTEx models and Fusion models.
+
+
+## Application to Real TWAS
+We updated our PrediXcan software to perform variance control for TWAS studies when using summary statistics. 
+First you will need download the latest release of MetaXcan, then download the [latest tissue models](https://uchicago.box.com/s/w0nzszuvuwcsznvo8x4c15o4hujqrwm7) with the phi used for varinace control.
+
+Next determine the sample size (N) and the heritability (h2) of your GWAS summary statistics, these two parameters together with phi are required for variance control. 
+To estimate the h2 of your GWAS summary statistics you can use [LDSC](https://github.com/bulik/ldsc) as described in their method. 
+Once you have all the required parameters you can run SPrediXcan with two new additional parameters as below;
+
+```{bash}
+python /MetaXcan/software/SPrediXcan.py \
+  --gwas_file imputed_pgc.scz2.txt.gz \
+  --gwas_N 3546445 \
+  --gwas_h2 0.34 \
+  --snp_column SNP \
+  --effect_allele_column A1 \
+  --non_effect_allele_column A2 \
+  --zscore_column Z \
+  --model_db_path en_Whole_Blood.db \
+  --covariance en_Whole_Blood.txt.gz \
+  --model_db_snp_key rsid \
+  --keep_non_rsid \
+  --additional_output \
+  --throw \
+  --output_file imputed_pgc.scz2_SprediXcan_results.csv
+```
+
+The output will contain the calibrated values for pvalue and zscore are in the `pvalue` and `zscore` columns respectively. 
+This is to allow for backward compatibility of the software and also not to break downstream pipelines which depend on the SPrediXcan results.
+The uncalibrated pvalues and zscores are at the right end of the table in `uncalibrated_pvalue` and `uncalibrated_zscore` columns respectively.
+
+**Note:** If you don't provide both the `--gwas_N` and `--gwas_h2` the tool will give you uncalibrated_pvalue and uncalibrated_zscore in the pvalue and zscore column. 
+For calibration to work both the parameters should be provided and used with latest models with phi parameter.  
