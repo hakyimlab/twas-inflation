@@ -76,3 +76,6 @@ The uncalibrated pvalues and zscores are at the right end of the table in `uncal
 **Note:** If you don't provide both the `--gwas_N` and `--gwas_h2` the tool will give you uncalibrated_pvalue and uncalibrated_zscore in the pvalue and zscore column. 
 For calibration to work both the parameters should be provided and used with latest models with phi parameter.  
 
+## docs
+Step by step documentation how to estimate phi for your own models is available in the [Wiki page](https://github.com/hakyimlab/twas-inflation/wiki/Estimating-phi-for-variance-control-method)
+
