@@ -5,8 +5,6 @@ library(data.table)
 library(arrow)
 library(BEDMatrix)
 library(optparse)
-library(Matrix)
-library(Rfast)
 #set.seed(2023)
 
 option_list <- list(
