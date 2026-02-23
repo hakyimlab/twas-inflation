@@ -208,16 +208,13 @@ for (batch in 1:n_batches) {
   
   # save the nulls
   fwrite(traits_nulls,
-         file = glue::glue("/scratch/fnyasimi1/tmp_data/batch{batch}_{file_name}"),
+         file = glue::glue("/tmp/batch{batch}_{file_name}"),
          sep = "\t")
 }
 
-# clean up
-rm(X,pred_traits)
-
-# gather
+# gather and clean up
 for (batch in 1:n_batches) {
-  file_path <- glue::glue("/scratch/fnyasimi1/tmp_data/batch{batch}_{file_name}")
+  file_path <- glue::glue("/tmp/batch{batch}_{file_name}")
   tmp_df <- fread(file_path)
 
   if (batch == 1) {
