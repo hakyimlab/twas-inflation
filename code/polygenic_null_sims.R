@@ -5,8 +5,6 @@ library(data.table)
 library(arrow)
 library(genio)
 library(optparse)
-library(Matrix)
-library(Rfast)
 #set.seed(2023)
 
 option_list <- list(
@@ -74,7 +72,9 @@ load_geno <- function(plink_file_path) {
   # mutate the NAs with col mean
   #X[is.na(X)] <- 0
   X = as.data.table(X)
+  # convert integer columns to double to avoid truncation when assigning mean values
   for (j in seq_along(X)) {
+     if (is.integer(X[[j]])) set(X, j = j, value = as.double(X[[j]]))
      set(X, which(is.na(X[[j]])), j, mean(X[[j]], na.rm = TRUE))
   }
   X <- as.matrix(X)
@@ -183,12 +183,10 @@ if(grepl("\\.parquet$", predicted_traits)) {
 
 if ("indiv" %in% names(pred_traits)) {
   pred_traits <- pred_traits %>%
-    dplyr::filter(indiv %in% select_samp$IID) %>%
     column_to_rownames(var = "indiv") %>%
     as.matrix()
 } else {
   pred_traits <- pred_traits %>% select(-FID) %>%
-    dplyr::filter(IID %in% select_samp$IID) %>% 
     column_to_rownames(var = "IID") %>%
     as.matrix()
 }
@@ -210,16 +208,13 @@ for (batch in 1:n_batches) {
   
   # save the nulls
   fwrite(traits_nulls,
-         file = glue::glue("/scratch/fnyasimi1/tmp_data/batch{batch}_{file_name}"),
+         file = glue::glue("/tmp/batch{batch}_{file_name}"),
          sep = "\t")
 }
 
-# clean up
-rm(X,pred_traits)
-
-# gather
+# gather and clean up
 for (batch in 1:n_batches) {
-  file_path <- glue::glue("/scratch/fnyasimi1/tmp_data/batch{batch}_{file_name}")
+  file_path <- glue::glue("/tmp/batch{batch}_{file_name}")
   tmp_df <- fread(file_path)
 
   if (batch == 1) {
